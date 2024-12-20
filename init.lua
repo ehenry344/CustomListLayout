@@ -28,14 +28,12 @@ export type CustomListLayoutConfig = {
 type ListLayoutProto = {
 	__index: ListLayoutProto,
 	
-	new: (adornee: GuiObject, config: CustomListLayoutConfig, testMode: boolean?)->ListLayout,
+	new: (adornee: GuiObject, config: CustomListLayoutConfig)->ListLayout,
 	
 	Destroy: (ListLayout)->(), 
 	
 	_hookAdornee: (ListLayout)->(),
 	_getInstances: (ListLayout)->{GuiObject},
-	_clearTestElems: (ListLayout)->(),
-	_placeTestElems: (ListLayout, number, number)->(),
 	_positionInstances: (ListLayout)->()
 }
 
@@ -43,9 +41,7 @@ type ListLayout = typeof(setmetatable({} :: {
 	_adornee: GuiObject,
 	_connections: {[GuiObject]: {RBXScriptConnection}},
 	_contentSize: number,
-	
-	_testMode: boolean,
-	
+		
 	Padding: UDim, 
 	FillDirection: FillDirection,
 	SortOrder: SortOrder,
@@ -53,13 +49,10 @@ type ListLayout = typeof(setmetatable({} :: {
 	VerticalAlignment: VerticalAlignment,
 }, {} :: ListLayoutProto))
 
-local TEST_ATTRIBUTE_NAME = "TestElement"
-local TEST_ELEMENT_COLOR = Color3.fromRGB(255, 0, 0)
-
 local CustomListLayout: ListLayoutProto = {} :: ListLayoutProto
 CustomListLayout.__index = CustomListLayout
 
-function CustomListLayout.new(adornee: GuiObject, config: CustomListLayoutConfig, testMode: boolean?): ListLayout
+function CustomListLayout.new(adornee: GuiObject, config: CustomListLayoutConfig): ListLayout
 	if adornee:FindFirstChildOfClass("UIListLayout") then
 		error("Incompatiblity Err: cannot apply CustomListLayout to instance with UIListLayout")
 	end
@@ -68,8 +61,6 @@ function CustomListLayout.new(adornee: GuiObject, config: CustomListLayoutConfig
 		_adornee = adornee, 
 		_connections = {},
 		_contentSize = 0,
-		
-		_testMode = testMode or false, 
 		
 		Padding = config.Padding or UDim.new(0, 0), 
 		FillDirection = config.FillDirection or "Vertical" :: FillDirection,
@@ -112,7 +103,7 @@ function CustomListLayout:_hookAdornee()
 	self._connections[self._adornee] = {}
 	
 	table.insert(self._connections[self._adornee], self._adornee.ChildAdded:Connect(function(child)
-		if child:IsA("GuiObject") and not child:GetAttribute(TEST_ATTRIBUTE_NAME) then
+		if child:IsA("GuiObject") then
 			if self.FillDirection == "Horizontal" then
 				self._contentSize += child.AbsoluteSize.X
 			else
@@ -124,7 +115,7 @@ function CustomListLayout:_hookAdornee()
 	end))
 	
 	table.insert(self._connections[self._adornee], self._adornee.ChildRemoved:Connect(function(child)
-		if child:IsA("GuiObject") and not child:GetAttribute(TEST_ATTRIBUTE_NAME) then
+		if child:IsA("GuiObject") then
 			if self._connections[child] then
 				for _, connection in ipairs(self._connections[child]) do
 					connection:Disconnect()
@@ -159,74 +150,14 @@ end
 function CustomListLayout:_getInstances()
 	local guiInstances = {}
 	for _, v in pairs(self._adornee:GetChildren()) do
-		if (v:IsA("GuiObject") and v.Visible and not v:GetAttribute(TEST_ATTRIBUTE_NAME)) then
+		if (v:IsA("GuiObject") and v.Visible then
 			table.insert(guiInstances, v) 
 		end 
 	end
 	return guiInstances
 end
 
-function CustomListLayout:_clearTestElems()
-	for _, v in pairs(self._adornee:GetChildren()) do
-		if v:GetAttribute(TEST_ATTRIBUTE_NAME) then
-			v:Destroy()
-		end
-	end
-end
-
-local function makeTestElement(isHorizontal: boolean)
-	local line = Instance.new("Frame")
-
-	line:SetAttribute(TEST_ATTRIBUTE_NAME, true)  
-	line.BackgroundColor3 = TEST_ELEMENT_COLOR
-	
-	if isHorizontal then
-		line.Size = UDim2.new(0, 1, 1)
-	else
-		line.Size = UDim2.new(1, 0, 0, 1)
-	end
-
-	return line
-end
-
-function CustomListLayout:_placeTestElems(offset: number, maxOffset: number)
-	local isHorizontal = self.FillDirection == "Horizontal"
-	
-	local minBound = makeTestElement(isHorizontal)
-	local maxBound = makeTestElement(isHorizontal)
-	
-	local contentMinBound = makeTestElement(isHorizontal)
-	local contentMaxBound = makeTestElement(isHorizontal)
-	
-	local midBound = makeTestElement(isHorizontal)
-	
-	minBound.Parent = self._adornee
-	maxBound.Parent = self._adornee
-	midBound.Parent = self._adornee
-	
-	contentMinBound.Parent = self._adornee
-	contentMaxBound.Parent = self._adornee
-	
-	if isHorizontal then
-		minBound.Position = UDim2.new()
-		maxBound.Position = UDim2.new(1)
-		midBound.Position = UDim2.new(0.5)
-		
-		contentMinBound.Position = UDim2.new(0, offset)
-		contentMaxBound.Position = UDim2.new(0, maxOffset)
-	else
-		minBound.Position = UDim2.new()
-		maxBound.Position = UDim2.new(0, 0, 1)
-		
-		contentMinBound.Position = UDim2.new(0, 0, 0, offset)
-		contentMaxBound.Position = UDim2.new(0, 0, 0, maxOffset)
-	end
-end
-
-
-function CustomListLayout:_positionInstances()
-	if self._testMode then self:_clearTestElems() end
-	
+function CustomListLayout:_positionInstances()	
 	local children = self:_getInstances()
 	
 	-- in the future perhaps clean this up so we dont need to sort, we just position elements based off their numbers
@@ -253,10 +184,6 @@ function CustomListLayout:_positionInstances()
 			offset = (adorneeWidth / 2) - ((self._contentSize / 2) + halfPadding) 			
 		end
 		
-		if self._testMode then
-			self:_placeTestElems(offset, offset + self._contentSize + (#children - 1)*absolutePadding)
-		end
-		
 		for i, guiObject in ipairs(children) do			
 			guiObject.Position = UDim2.new(
 				0, 
@@ -281,10 +208,6 @@ function CustomListLayout:_positionInstances()
 			offset = (adorneeHeight / 2) - ((self._contentSize / 2) + halfPadding)		
 		end
 
-		if self._testMode then
-			self:_placeTestElems(offset, offset + self._contentSize + (#children - 1)*absolutePadding)
-		end
-		
 		for i, guiObject in ipairs(children) do
 			guiObject.Position = UDim2.new(
 				guiObject.Position.X.Scale, 
