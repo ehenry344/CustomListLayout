@@ -1,6 +1,6 @@
 --@author BostonWhaIer
 --@created 11/27/2024
---@updated 11/28/2024
+--@updated 12/23/2024
 
 --[[
 Custom UIListLayout implementation
@@ -33,6 +33,8 @@ type ListLayoutProto = {
 	Destroy: (ListLayout)->(), 
 	
 	_hookAdornee: (ListLayout)->(),
+	_hookChild: (ListLayout, GuiObject)->(),
+	_unhookChild: (ListLayout, GuiObject)->(),
 	_getInstances: (ListLayout)->{GuiObject},
 	_positionInstances: (ListLayout)->()
 }
@@ -40,7 +42,6 @@ type ListLayoutProto = {
 type ListLayout = typeof(setmetatable({} :: {
 	_adornee: GuiObject,
 	_connections: {[GuiObject]: {RBXScriptConnection}},
-	_contentSize: number,
 		
 	Padding: UDim, 
 	FillDirection: FillDirection,
@@ -57,20 +58,17 @@ function CustomListLayout.new(adornee: GuiObject, config: CustomListLayoutConfig
 		error("Incompatiblity Err: cannot apply CustomListLayout to instance with UIListLayout")
 	end
 	
-	local self = {
+	local self = setmetatable({
 		_adornee = adornee, 
 		_connections = {},
-		_contentSize = 0,
 		
 		Padding = config.Padding or UDim.new(0, 0), 
 		FillDirection = config.FillDirection or "Vertical" :: FillDirection,
 		SortOrder = config.SortOrder or "LayoutOrder" :: SortOrder,
 		HorizontalAlignment = config.HorizontalAlignment or "Left" :: HorizontalAlignment,
 		VerticalAlignment = config.VerticalAlignment or "Top" :: VerticalAlignment, 
-	}
-	
-	setmetatable(self, CustomListLayout)
-	
+	}, CustomListLayout)
+		
 	self:_hookAdornee()
 	
 	return self
@@ -88,27 +86,38 @@ function CustomListLayout:Destroy()
 	-- gotta figure out how to not make this leak memory (aka setting everything in the table to nil to allow gc), typechecking is giving me issues with that :P
 end
 
--- basically make it act like the real uilistlayout, so whenever stuff is added and stuff like that update the size. also handle the size update whe the object is created and such
+function CustomListLayout:_hookChild(child: GuiObject)
+	self._connections[child] = {}
 
--- TODO: add functionality that UIListLayouts also have where if you make some instance in its domain invisible itll update the position of the visible elements as if that elements
--- wasn't there.
+	table.insert(self._connections[child], child:GetPropertyChangedSignal("Visible"):Connect(function()
+		self:_positionInstances()
+	end))
+	
+	table.insert(self._connections[child], child:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		self:_positionInstances()
+	end))
+end
+
+function CustomListLayout:_unhookChild(child: GuiObject)
+	if self._connections[child] then
+		for _, connection in ipairs(self._connections[child]) do
+			connection:Disconnect()
+		end
+		
+		self._connections[child] = nil
+	end
+end
 
 function CustomListLayout:_hookAdornee()
-	local function connectVisibility(guiObject: GuiObject)
-		self._connections[guiObject] = {guiObject:GetPropertyChangedSignal("Visible"):Connect(function()
-			self:_positionInstances()
-		end)}
-	end
-	
 	self._connections[self._adornee] = {}
+	
+	table.insert(self._connections[self._adornee], self._adornee.Destroying:Connect(function()
+		self:Destroy()
+	end))
 	
 	table.insert(self._connections[self._adornee], self._adornee.ChildAdded:Connect(function(child)
 		if child:IsA("GuiObject") then
-			if self.FillDirection == "Horizontal" then
-				self._contentSize += child.AbsoluteSize.X
-			else
-				self._contentSize += child.AbsoluteSize.Y
-			end
+			self:_hookChild(child)
 			
 			self:_positionInstances()
 		end
@@ -116,32 +125,14 @@ function CustomListLayout:_hookAdornee()
 	
 	table.insert(self._connections[self._adornee], self._adornee.ChildRemoved:Connect(function(child)
 		if child:IsA("GuiObject") then
-			if self._connections[child] then
-				for _, connection in ipairs(self._connections[child]) do
-					connection:Disconnect()
-				end
-				
-				self._connections[child] = nil
-			end
-
-			if self.FillDirection == "Horizontal" then
-				self._contentSize -= child.AbsoluteSize.X
-			else
-				self._contentSize -= child.AbsoluteSize.Y
-			end
+			self:_unhookChild(child)
 
 			self:_positionInstances()
 		end
 	end))
 	
 	for _, child in ipairs(self:_getInstances()) do
-		if self.FillDirection == "Horizontal" then
-			self._contentSize += child.AbsoluteSize.X
-		else
-			self._contentSize += child.AbsoluteSize.Y
-		end
-		
-		connectVisibility(child)
+		self:_hookChild(child)
 	end
 	
 	self:_positionInstances()
@@ -149,11 +140,13 @@ end
 
 function CustomListLayout:_getInstances()
 	local guiInstances = {}
+	
 	for _, v in pairs(self._adornee:GetChildren()) do
-		if (v:IsA("GuiObject") and v.Visible then
+		if v:IsA("GuiObject") and v.Visible then
 			table.insert(guiInstances, v) 
 		end 
 	end
+	
 	return guiInstances
 end
 
@@ -169,19 +162,25 @@ function CustomListLayout:_positionInstances()
 			return a.Name < b.Name
 		end
 	end)
-	
+		
 	if self.FillDirection == "Horizontal" then
 		local adorneeWidth = self._adornee.AbsoluteSize.X
 		local absolutePadding = self.Padding.Offset + (adorneeWidth * self.Padding.Scale)
 		
 		local offset = 0 -- default / left align
 		
+		-- get content size
+		local contentSize = 0
+		for i, child in children do
+			contentSize += child.AbsoluteSize.X
+		end
+		
 		if self.HorizontalAlignment == "Right" then
-			offset = adorneeWidth - self._contentSize
+			offset = adorneeWidth - contentSize
 		elseif self.HorizontalAlignment == "Center" then
 			local halfPadding = ((#children-1)*absolutePadding) / 2
 			
-			offset = (adorneeWidth / 2) - ((self._contentSize / 2) + halfPadding) 			
+			offset = (adorneeWidth / 2) - ((contentSize / 2) + halfPadding) 			
 		end
 		
 		for i, guiObject in ipairs(children) do			
@@ -199,13 +198,19 @@ function CustomListLayout:_positionInstances()
 		local absolutePadding = self.Padding.Offset + (adorneeHeight * self.Padding.Scale)
 
 		local offset = 0 -- default / top align
-
+		
+		-- get content size
+		local contentSize = 0
+		for i, child in children do
+			contentSize += child.AbsoluteSize.Y
+		end
+		
 		if self.VerticalAlignment == "Bottom" then
-			offset = adorneeHeight - self._contentSize
+			offset = adorneeHeight - contentSize
 		elseif self.VerticalAlignment == "Center" then		
 			local halfPadding = ((#children-1)*absolutePadding) / 2
 			
-			offset = (adorneeHeight / 2) - ((self._contentSize / 2) + halfPadding)		
+			offset = (adorneeHeight / 2) - ((contentSize / 2) + halfPadding)		
 		end
 
 		for i, guiObject in ipairs(children) do
