@@ -96,6 +96,10 @@ function CustomListLayout:_hookChild(child: GuiObject)
 	table.insert(self._connections[child], child:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		self:_positionInstances()
 	end))
+	
+	table.insert(self._connections[child], child:GetPropertyChangedSignal("LayoutOrder"):Connect(function()
+		self:_positionInstances()
+	end))
 end
 
 function CustomListLayout:_unhookChild(child: GuiObject)
