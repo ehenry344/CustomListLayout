@@ -68,7 +68,7 @@ function CustomListLayout.new(adornee: GuiObject, config: CustomListLayoutConfig
 		HorizontalAlignment = config.HorizontalAlignment or "Left" :: HorizontalAlignment,
 		VerticalAlignment = config.VerticalAlignment or "Top" :: VerticalAlignment, 
 	}, CustomListLayout)
-		
+			
 	self:_hookAdornee()
 	
 	return self
@@ -136,6 +136,11 @@ function CustomListLayout:_hookAdornee()
 			self:_positionInstances()
 		end
 	end))
+		
+	-- this fixes a very niche edge case where the absolutesize of the element changes at load time
+	table.insert(self._connections[self._adornee], self._adornee:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		self:_positionInstances()
+	end))
 	
 	for _, child in ipairs(self:_getInstances()) do
 		self:_hookChild(child)
@@ -171,7 +176,7 @@ function CustomListLayout:_positionInstances()
 	
 	local adorneeWidth = self._adornee.AbsoluteSize.X
 	local adorneeHeight = self._adornee.AbsoluteSize.Y
-		
+			
 	if self.FillDirection == "Horizontal" then
 		local absolutePadding = self.Padding.Offset + (adorneeWidth * self.Padding.Scale)
 		
