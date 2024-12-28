@@ -185,16 +185,15 @@ function CustomListLayout:_positionInstances()
 			xOffset = (adorneeWidth / 2) - ((contentSize / 2) + halfPadding) 			
 		end
 		
-		-- get the vertical position for all the elements
-		local yOffset = 0
-		
-		if self.VerticalAlignment == "Bottom" then
-			yOffset = adorneeHeight
-		elseif self.VerticalAlignment == "Center" then
-			yOffset = adorneeHeight / 2
-		end
-		
-		for i, guiObject in ipairs(children) do			
+		for i, guiObject in ipairs(children) do	
+			local yOffset = 0
+			
+			if self.VerticalAlignment == "Bottom" then
+				yOffset = adorneeHeight - (guiObject.AbsoluteSize.Y) 
+			elseif self.VerticalAlignment == "Center" then
+				yOffset = (adorneeHeight / 2) - (guiObject.AbsoluteSize.Y / 2)
+			end
+			
 			guiObject.Position = UDim2.fromOffset(xOffset + (i-1)*absolutePadding, yOffset)
 			
 			xOffset += guiObject.AbsoluteSize.X
@@ -218,16 +217,15 @@ function CustomListLayout:_positionInstances()
 			yOffset = (adorneeHeight / 2) - ((contentSize / 2) + halfPadding)		
 		end
 		
-		-- get the horizontal position for all the elements
-		local xOffset = 0
-		
-		if self.HorizontalAlignment == "Right" then
-			xOffset = adorneeWidth
-		elseif self.HorizontalAlignment == "Center" then
-			xOffset = adorneeWidth / 2
-		end
-
 		for i, guiObject in ipairs(children) do
+			local xOffset = 0
+			
+			if self.HorizontalAlignment == "Right" then
+				xOffset = adorneeWidth - (guiObject.AbsoluteSize.X)
+			elseif self.HorizontalAlignment == "Center" then
+				xOffset = (adorneeWidth / 2) - (guiObject.AbsoluteSize.X / 2)
+			end
+			
 			guiObject.Position = UDim2.fromOffset(xOffset, yOffset + (i-1)*absolutePadding)
 			
 			yOffset += guiObject.AbsoluteSize.Y
