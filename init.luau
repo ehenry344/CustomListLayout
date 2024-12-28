@@ -83,6 +83,8 @@ function CustomListLayout:Destroy()
 		self._connections[instance] = nil
 	end
 	
+	setmetatable(self, nil)
+	self = nil
 	-- gotta figure out how to not make this leak memory (aka setting everything in the table to nil to allow gc), typechecking is giving me issues with that :P
 end
 
